@@ -79,6 +79,10 @@ pass `--action-cache` explicitly if there is room for it. The encoder processes
 one text at a time by default to bound peak memory; increase `--batch-size`
 only after measuring memory use on your Mac.
 
+For a smaller functional test that avoids downloading Qwen3-8B, see the
+[Qwen3-0.6B MPS smoke test](docs/MPS_SMALL_MODEL_SMOKE.md). It uses `clm-raw`
+without a trained head and does not measure CLM-8B answer quality.
+
 ---
 
 ## Quickstart

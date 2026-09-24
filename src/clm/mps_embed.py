@@ -1,8 +1,9 @@
 """OpenAI-compatible Qwen3 last-token embeddings on Apple Silicon.
 
 This endpoint supplies the existing CLM Embedder with the unprojected final
-hidden state of Qwen3-8B. The CLM client normalizes it before scoring. It is a
-functional MPS alternative to the vLLM pooling service, not a speed benchmark.
+hidden state of a Qwen3 model (Qwen3-8B by default). The CLM client normalizes
+it before scoring. The released CLM head requires Qwen3-8B's 4096-dimensional
+embeddings. This is a functional MPS path, not a speed benchmark.
 """
 from __future__ import annotations
 
