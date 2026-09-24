@@ -36,7 +36,7 @@ We invite the community to plug it into their own agents and benchmarks!
 
 ---
 
-## Installation
+## Installation (Linux / NVIDIA)
 
 ```bash
 git clone https://github.com/Contrastive-LM/CLM.git && cd CLM
@@ -44,6 +44,40 @@ pip install -r requirements.txt
 ```
 
 Requires Python 3.10+, Linux and an NVIDIA GPU. Installs everything, including PyTorch and vLLM.
+
+### Apple Silicon / MPS (experimental)
+
+This path uses PyTorch MPS for Qwen3-8B last-token embeddings and the CLM heads.
+It does not install vLLM. Use Python 3.10+ on an Apple Silicon Mac:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-macos.txt
+```
+
+Start the encoder and API in separate terminals (activate `.venv` in each):
+
+```bash
+clm-mps-embed --port 8090 --max-model-len 2048
+```
+
+```bash
+clm-serve --host 127.0.0.1 --port 8700 --device mps --action-cache 0 \
+  --emb-url http://127.0.0.1:8090/v1/embeddings
+```
+
+The first encoder start downloads the `Qwen/Qwen3-8B` weights (about 16 GB);
+`clm-serve` downloads the reference projection head (about 75 MB). Both need
+substantial free disk space and unified memory. The MPS server returns the last
+non-padding hidden state in the same API format consumed by `clm-serve`, but its
+numerical agreement with the reference vLLM encoder and downstream answer
+quality have **not** been established. Test with the full Qwen3-8B weights and
+compare outputs before treating MPS scores as equivalent to published results.
+The action cache is off by default on MPS to leave memory for the 8B encoder;
+pass `--action-cache` explicitly if there is room for it. The encoder processes
+one text at a time by default to bound peak memory; increase `--batch-size`
+only after measuring memory use on your Mac.
 
 ---
 
@@ -421,14 +455,14 @@ files only; every API route above shadows it.
 
 ```
 clm-serve [--port 8700] [--emb-url http://127.0.0.1:8090/v1/embeddings] [--emb-model qwen3-8b]
-          [--max-tokens 2048] [--ckpt PATH] [--ckpt-dir DIR] [--model NAME=PATH ...] [--device cpu|cuda]
+          [--max-tokens 2048] [--ckpt PATH] [--ckpt-dir DIR] [--model NAME=PATH ...] [--device cpu|cuda|mps]
           [--action-cache 0.02|512MiB|0] [--no-ui] [--cors]
 ```
 
 `--ckpt PATH` serves your own head as `clm-latest` (default: the reference
 head in `~/.cache/clm/`, downloaded if missing); `--ckpt-dir DIR` serves every
 `*.pt` there under its file stem; `--model NAME=PATH` adds one more.
-The heads run on the GPU when torch sees one, else on the CPU; `--device` (or
+The heads run on CUDA or MPS when torch sees one, else on the CPU; `--device` (or
 `CLM_DEVICE`) forces one. Checkpoints hot-reload when the file changes. Set `CLM_API_KEY` to require
 `Authorization: Bearer <key>` (the playground has a field for it). Environment
 equivalents: `CLM_PORT`, `CLM_EMB_URL`, `CLM_EMB_MODEL`, `CLM_CKPT`,

@@ -1,0 +1,3 @@
+# Apple Silicon / PyTorch MPS. Excludes Linux-only vLLM.
+-e .[macos]
+httpx>=0.25
