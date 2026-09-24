@@ -1,10 +1,4 @@
-"""OpenAI-compatible Qwen3 last-token embeddings on Apple Silicon.
-
-This endpoint supplies the existing CLM Embedder with the unprojected final
-hidden state of a Qwen3 model (Qwen3-8B by default). The CLM client normalizes
-it before scoring. The released CLM head requires Qwen3-8B's 4096-dimensional
-embeddings. This is a functional MPS path, not a speed benchmark.
-"""
+"""Serve Qwen3 last-token embeddings on Apple Silicon through the OpenAI API."""
 from __future__ import annotations
 
 import argparse
@@ -27,13 +21,16 @@ class MpsEncoder:
 
         if device == "mps" and not torch.backends.mps.is_available():
             raise RuntimeError("PyTorch MPS is unavailable; check Apple Silicon and the torch installation")
+        if max_tokens < 1:
+            raise ValueError("max_tokens must be positive")
         if batch_size < 1:
             raise ValueError("batch_size must be positive")
-        self.model_name, self.device, self.max_tokens, self.batch_size = model, device, max_tokens, batch_size
+        self.device, self.max_tokens, self.batch_size = device, max_tokens, batch_size
         self.tokenizer = AutoTokenizer.from_pretrained(model)
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "right"
+        self.tokenizer.truncation_side = "left"
         if dtype not in ("auto", "float16", "bfloat16"):
             raise ValueError("dtype must be auto, float16 or bfloat16")
         if device == "mps":
@@ -52,11 +49,8 @@ class MpsEncoder:
             load_dtype = torch.float32
         self.dtype = str(load_dtype).removeprefix("torch.")
         if device == "mps":
-            # Transformers 4.57 preallocates the entire model as one MPS buffer
-            # when device_map is set. Qwen3-8B exceeds Metal's single-buffer
-            # limit even though its individual tensors fit in unified memory.
-            # Skip only that CUDA-oriented warmup; shard-wise loading still
-            # places weights directly on MPS with low CPU memory use.
+            # Transformers' allocator warmup requests one buffer larger than
+            # Metal allows for Qwen3-8B; load its shards directly instead.
             from contextlib import nullcontext
             from unittest.mock import patch
             from transformers import modeling_utils

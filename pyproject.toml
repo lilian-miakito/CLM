@@ -32,9 +32,8 @@ serve = ["torch>=2.1", "fastapi>=0.100", "uvicorn>=0.23"]
 hf = ["huggingface_hub>=0.20"]
 # run the Qwen3-8B embedder yourself (GPU)
 vllm = ["vllm>=0.6"]
-# Native Apple Silicon encoder: Qwen3 last-token hidden states through PyTorch MPS.
 macos = ["torch>=2.1", "fastapi>=0.100", "uvicorn>=0.23",
-         "transformers>=4.51,<5", "accelerate>=1.0"]
+         "transformers>=4.51,<5", "accelerate>=1.0", "huggingface_hub>=0.20"]
 all = ["clm[serve,hf]"]
 
 [project.scripts]

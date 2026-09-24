@@ -62,8 +62,6 @@ class Engine:
         if budget is None:
             budget = os.environ.get("CLM_ACTION_CACHE")
         if budget is None and self.device.startswith("mps"):
-            # The 8B encoder shares unified memory with the projection heads.
-            # Opt in to a reserved cache only when the available RAM is known.
             budget = 0
         try:
             arena = VectorArena(self.device, budget)

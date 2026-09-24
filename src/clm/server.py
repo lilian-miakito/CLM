@@ -179,7 +179,7 @@ def main() -> None:
     ap.add_argument("--device", default=None,
                     help="device for the heads (cpu, cuda or mps; default: CUDA then MPS then CPU, CLM_DEVICE overrides)")
     ap.add_argument("--action-cache", default=None, metavar="BUDGET",
-                        help="GPU memory reserved at start-up for reused state and action vectors: a fraction "
+                    help="device memory reserved at start-up for reused state and action vectors: a fraction "
                          "of the device (0.02 by default, off on MPS) or a size (512MiB); 0 disables it. "
                          "Environment: CLM_ACTION_CACHE")
     ap.add_argument("--no-download", action="store_true", help="fail instead of downloading the reference head")

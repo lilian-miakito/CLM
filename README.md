@@ -36,57 +36,44 @@ We invite the community to plug it into their own agents and benchmarks!
 
 ---
 
-## Installation (Linux / NVIDIA)
+## Installation
 
 ```bash
 git clone https://github.com/Contrastive-LM/CLM.git && cd CLM
+```
+
+### Linux / NVIDIA
+
+```bash
 pip install -r requirements.txt
 ```
 
 Requires Python 3.10+, Linux and an NVIDIA GPU. Installs everything, including PyTorch and vLLM.
 
-### Apple Silicon / MPS (experimental)
+### Apple Silicon / MPS
 
-This path uses PyTorch MPS for Qwen3-8B last-token embeddings and the CLM heads.
-It does not install vLLM. Use Python 3.10+ on an Apple Silicon Mac:
+On an Apple Silicon Mac, install the PyTorch MPS encoder instead of vLLM:
 
 ```bash
-python3.12 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-macos.txt
 ```
 
-Start the encoder and API in separate terminals (activate `.venv` in each):
+Start the encoder and API in separate terminals, with `.venv` active in each:
 
 ```bash
-clm-mps-embed --port 8090 --max-model-len 2048
+clm-mps-embed --port 8090
 ```
 
 ```bash
-clm-serve --host 127.0.0.1 --port 8700 --device mps --action-cache 0 \
-  --emb-url http://127.0.0.1:8090/v1/embeddings
+clm-serve --port 8700 --emb-url http://127.0.0.1:8090/v1/embeddings
 ```
 
-The first encoder start downloads the `Qwen/Qwen3-8B` weights (about 16 GB);
-`clm-serve` downloads the reference projection head (about 75 MB). Both need
-substantial free disk space and unified memory. The MPS server returns the last
-non-padding hidden state in the same API format consumed by `clm-serve`. Its
-`--dtype auto` setting uses the checkpoint's BF16 format when MPS supports it;
-`--dtype float16` is available for Macs without BF16 support. Numerical
-agreement with the reference vLLM encoder and downstream answer quality have
-**not** been established. Test with the full Qwen3-8B weights and
-compare outputs before treating MPS scores as equivalent to published results.
-One 24 GB Mac completed a [Qwen3-8B MPS functional test](docs/MPS_8B_SMOKE.md)
-in FP16 with the released head; four hand-written rank cases matched the
-expected top choice in 3/4, with 35–78 second wall times per case.
-The action cache is off by default on MPS to leave memory for the 8B encoder;
-pass `--action-cache` explicitly if there is room for it. The encoder processes
-one text at a time by default to bound peak memory; increase `--batch-size`
-only after measuring memory use on your Mac.
-
-For a smaller functional test that avoids downloading Qwen3-8B, see the
-[Qwen3-0.6B MPS smoke test](docs/MPS_SMALL_MODEL_SMOKE.md). It uses `clm-raw`
-without a trained head and does not measure CLM-8B answer quality.
+The first launch downloads `Qwen/Qwen3-8B` (about 16 GB) and the CLM head
+(about 75 MB). The encoder uses BF16 on supported Macs and FP16 otherwise.
+The vector cache is off by default on MPS to leave memory for the encoder;
+`--action-cache` and `--batch-size` remain available to tune larger Macs.
 
 ---
 
@@ -465,7 +452,7 @@ files only; every API route above shadows it.
 ```
 clm-serve [--port 8700] [--emb-url http://127.0.0.1:8090/v1/embeddings] [--emb-model qwen3-8b]
           [--max-tokens 2048] [--ckpt PATH] [--ckpt-dir DIR] [--model NAME=PATH ...] [--device cpu|cuda|mps]
-              [--action-cache 0.02|512MiB|0] [--no-ui] [--cors]
+          [--action-cache 0.02|512MiB|0] [--no-ui] [--cors]
 ```
 
 `--ckpt PATH` serves your own head as `clm-latest` (default: the reference
