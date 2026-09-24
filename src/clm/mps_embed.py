@@ -21,9 +21,9 @@ SERVED_MODEL = "qwen3-8b"
 
 class MpsEncoder:
     def __init__(self, model: str = MODEL, device: str = "mps", max_tokens: int = 2048,
-                 batch_size: int = 1):
+                 batch_size: int = 1, dtype: str = "auto"):
         import torch
-        from transformers import AutoModel, AutoTokenizer
+        from transformers import AutoConfig, AutoModel, AutoTokenizer
 
         if device == "mps" and not torch.backends.mps.is_available():
             raise RuntimeError("PyTorch MPS is unavailable; check Apple Silicon and the torch installation")
@@ -34,9 +34,52 @@ class MpsEncoder:
         if self.tokenizer.pad_token_id is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "right"
-        dtype = torch.float16 if device == "mps" else torch.float32
-        self.model = AutoModel.from_pretrained(model, torch_dtype=dtype, device_map=device,
-                                               low_cpu_mem_usage=True).eval()
+        if dtype not in ("auto", "float16", "bfloat16"):
+            raise ValueError("dtype must be auto, float16 or bfloat16")
+        if device == "mps":
+            checkpoint_dtype = getattr(AutoConfig.from_pretrained(model), "dtype", None)
+            requested = ("bfloat16" if checkpoint_dtype == torch.bfloat16 else "float16") if dtype == "auto" else dtype
+            load_dtype = torch.bfloat16 if requested == "bfloat16" else torch.float16
+            if load_dtype == torch.bfloat16:
+                try:
+                    probe = torch.ones((1, 1), dtype=load_dtype, device="mps")
+                    (probe @ probe).cpu()  # force execution; older MPS devices cannot run BF16
+                except (RuntimeError, TypeError) as exc:
+                    if dtype != "auto":
+                        raise RuntimeError("BF16 is unavailable on this MPS device") from exc
+                    load_dtype = torch.float16
+        else:
+            load_dtype = torch.float32
+        self.dtype = str(load_dtype).removeprefix("torch.")
+        if device == "mps":
+            # Transformers 4.57 preallocates the entire model as one MPS buffer
+            # when device_map is set. Qwen3-8B exceeds Metal's single-buffer
+            # limit even though its individual tensors fit in unified memory.
+            # Skip only that CUDA-oriented warmup; shard-wise loading still
+            # places weights directly on MPS with low CPU memory use.
+            from contextlib import nullcontext
+            from unittest.mock import patch
+            from transformers import modeling_utils
+
+            original_warmup = getattr(modeling_utils, "caching_allocator_warmup", None)
+
+            def warmup_unless_mps(model, expanded_device_map, hf_quantizer):
+                if expanded_device_map and all(
+                    str(value).startswith("mps") for value in expanded_device_map.values()
+                ):
+                    return
+                return original_warmup(model, expanded_device_map, hf_quantizer)
+
+            warmup_guard = (patch.object(modeling_utils, "caching_allocator_warmup", warmup_unless_mps)
+                            if original_warmup is not None else nullcontext())
+            with warmup_guard:
+                self.model = AutoModel.from_pretrained(
+                    model, dtype=load_dtype, device_map=device, low_cpu_mem_usage=True
+                ).eval()
+        else:
+            self.model = AutoModel.from_pretrained(
+                model, dtype=load_dtype, device_map=device, low_cpu_mem_usage=True
+            ).eval()
         self._lock = threading.Lock()
 
     def embed(self, inputs: list[str] | list[list[int]], max_tokens: int | None = None) -> tuple[np.ndarray, int]:
@@ -67,7 +110,7 @@ def create_app(encoder: MpsEncoder, served_model: str = SERVED_MODEL) -> FastAPI
 
     @app.get("/health")
     def health():
-        return {"ok": True, "model": served_model, "device": encoder.device}
+        return {"ok": True, "model": served_model, "device": encoder.device, "dtype": encoder.dtype}
 
     @app.get("/v1/models")
     def models():
@@ -115,6 +158,8 @@ def main() -> None:
     parser.add_argument("--model", default=MODEL, help="local path or Hugging Face model ID")
     parser.add_argument("--served-model-name", default=SERVED_MODEL)
     parser.add_argument("--device", choices=("mps", "cpu"), default="mps")
+    parser.add_argument("--dtype", choices=("auto", "float16", "bfloat16"), default="auto",
+                        help="MPS weight dtype; auto uses BF16 when the checkpoint and Mac support it")
     parser.add_argument("--max-model-len", type=int, default=2048)
     parser.add_argument("--batch-size", type=int, default=1,
                         help="encoder microbatch size (default 1 to limit unified-memory use)")
@@ -125,8 +170,8 @@ def main() -> None:
         parser.error("--max-model-len must be positive")
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
-    encoder = MpsEncoder(args.model, args.device, args.max_model_len, args.batch_size)
-    print(f"[clm] {args.model} embeddings on {args.device}, port {args.port}", flush=True)
+    encoder = MpsEncoder(args.model, args.device, args.max_model_len, args.batch_size, args.dtype)
+    print(f"[clm] {args.model} embeddings on {args.device} ({encoder.dtype}), port {args.port}", flush=True)
     import uvicorn
     uvicorn.run(create_app(encoder, args.served_model_name), host=args.host, port=args.port)
 

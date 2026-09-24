@@ -14,7 +14,7 @@ pretrained model, then run the encoder and example script in separate terminals:
 hf download Qwen/Qwen3-0.6B --revision c1899de289a04d12100db370d81485cdf75e47ca \
   --local-dir data/qwen3-0.6b
 clm-mps-embed --model data/qwen3-0.6b --served-model-name qwen3-0.6b \
-  --device mps --max-model-len 512 --port 8090
+  --device mps --dtype float16 --max-model-len 512 --port 8090
 ```
 
 ```bash
